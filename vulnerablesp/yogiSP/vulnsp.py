@@ -24,6 +24,11 @@ from jsonparse import jsonSingleComplaintDelete
 from jsonparse import jsonEditor
 from jsonparse import jsonReader
 
+# Vulnerable XXE imports
+import xml.dom.minidom
+import xml.sax
+import base64
+
 app = Flask(__name__, static_url_path='/static')
 app.config['SECRET_KEY'] = 'onelogindemopytoolkit'
 app.config['SAML_PATH'] = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'saml')
@@ -75,6 +80,24 @@ def index():
 
         return redirect(auth.logout(name_id=name_id, session_index=session_index))
     elif 'acs' in request.args:
+        # Inject XXE Vulnerability Here
+        try:
+            # Configure a SAX parser with external entities enabled
+            class ExternalEntityResolver(xml.sax.handler.EntityResolver):
+                def resolveEntity(self, publicId, systemId):
+                    # This specifically allows resolving file:// URLs
+                    return xml.sax.saxutils.prepare_input_source(systemId)
+            
+            parser = xml.sax.make_parser()
+            parser.setFeature(xml.sax.handler.feature_external_ges, True)
+            parser.setEntityResolver(ExternalEntityResolver())
+            
+            # Use the parser with minidom
+            dom = xml.dom.minidom.parseString(base64.b64decode(request.form['SAMLResponse']), parser)
+            result = dom.documentElement.toxml()
+        except Exception as e:
+            pass
+            
         auth.process_response()
         errors = auth.get_errors()
         not_auth_warn = not auth.is_authenticated()
